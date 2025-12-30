@@ -1,3 +1,6 @@
+from datetime import timedelta
+
+from django.core.serializers import serialize
 from rest_framework import viewsets, status
 from rest_framework.response import Response
 from .models import Author, Book, Member, Loan
@@ -11,7 +14,7 @@ class AuthorViewSet(viewsets.ModelViewSet):
     serializer_class = AuthorSerializer
 
 class BookViewSet(viewsets.ModelViewSet):
-    queryset = Book.objects.all()
+    queryset = Book.objects.all().select_related('author')
     serializer_class = BookSerializer
 
     @action(detail=True, methods=['post'])
@@ -49,6 +52,29 @@ class MemberViewSet(viewsets.ModelViewSet):
     queryset = Member.objects.all()
     serializer_class = MemberSerializer
 
+    @action(detail=False, methods=['get'], url_path='top-active')
+    def top_active(self, request):
+        pass
+
+
 class LoanViewSet(viewsets.ModelViewSet):
     queryset = Loan.objects.all()
     serializer_class = LoanSerializer
+
+    @action(detail=True, methods=['post'])
+    def extend_due_date(self, request, pk=None):
+        loan = self.get_object()
+        if loan.due_date.date() < timezone.now().date():
+            return Response({'error': 'Loan is already overdue.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        additional_days = request.data.get('additional_days')
+
+        if int(additional_days) < 0:
+            return Response({'error': 'Days should be positive integer'}, status=status.HTTP_400_BAD_REQUEST)
+
+        loan.due_date = loan.due_date + timedelta(days=additional_days)
+        loan.save()
+
+        serializer = self.get_serializer(loan, many=False)
+
+        return Response(serializer.data)
